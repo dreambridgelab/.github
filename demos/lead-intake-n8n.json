@@ -1,0 +1,173 @@
+{
+  "name": "Synthetic lead intake | Dream Bridge Lab demo",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "ea18d3b8-155e-4d6a-952b-5e8213c27f1a",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const leads = [\n  { leadId: \"DEMO-001\", name: \"Alice Example\", email: \"alice@example.test\", message: \"Need a quote this week for 12 stores\" },\n  { leadId: \"DEMO-002\", name: \"Bob Example\", email: \"bob@example.test\", message: \"Connect our spreadsheet and shared inbox\" },\n  { leadId: \"DEMO-003\", name: \"Alice Duplicate\", email: \"ALICE@example.test\", message: \"Repeated submission\" },\n  { leadId: \"DEMO-004\", name: \"Invalid Example\", email: \"invalid-email\", message: \"Please contact me\" },\n];\nreturn leads.map(lead => ({ json: lead }));"
+      },
+      "id": "88274edf-b8ca-4b83-9846-874be92400d1",
+      "name": "Create synthetic leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const source = $input.all().map(item => item.json);\nconst seen = new Set();\nconst accepted = [];\nconst rejected = [];\nfor (const lead of source) {\n  const email = String(lead.email ?? \"\").trim().toLowerCase();\n  const record = { leadId: String(lead.leadId ?? \"\"), name: String(lead.name ?? \"\").trim(), email, message: String(lead.message ?? \"\").trim() };\n  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {\n    rejected.push({ leadId: record.leadId, reason: \"invalid_email\" });\n    continue;\n  }\n  if (seen.has(email)) {\n    rejected.push({ leadId: record.leadId, reason: \"duplicate_in_batch\" });\n    continue;\n  }\n  seen.add(email);\n  accepted.push(record);\n}\nreturn [{ json: { inputCount: source.length, accepted, rejected } }];"
+      },
+      "id": "562e439e-48f4-4976-9861-11982921bc7e",
+      "name": "Validate and deduplicate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const state = $input.first().json;\nstate.accepted = state.accepted.map(lead => ({\n  ...lead,\n  priority: /quote|urgent|this week/i.test(lead.message) ? \"high\" : \"standard\",\n  category: /spreadsheet|sheet|inbox/i.test(lead.message) ? \"integration\" : \"new_project\",\n}));\nreturn [{ json: state }];"
+      },
+      "id": "4d9d772d-c2be-4851-b90a-d8d0c09eff0b",
+      "name": "Classify accepted leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1020,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const state = $input.first().json;\nstate.mockSheetRows = state.accepted.map(lead => ({\n  leadId: lead.leadId, name: lead.name, email: lead.email,\n  priority: lead.priority, category: lead.category,\n}));\nreturn [{ json: state }];"
+      },
+      "id": "ff3a404a-aeb9-4f34-bc97-a6a5157be747",
+      "name": "Prepare mock sheet rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const state = $input.first().json;\nstate.mockNotifications = state.accepted.map(lead => ({\n  to: \"demo-ops@example.test\", leadId: lead.leadId, priority: lead.priority,\n}));\nstate.mockAlerts = state.rejected\n  .filter(item => item.reason === \"invalid_email\")\n  .map(item => ({ to: \"demo-ops@example.test\", leadId: item.leadId, reason: item.reason }));\nreturn [{ json: state }];"
+      },
+      "id": "a3c4f8dc-fc1f-4e04-b9d0-4592213e3f55",
+      "name": "Prepare mock notices and alerts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const state = $input.first().json;\nreturn [{ json: {\n  demo: \"synthetic_lead_intake\",\n  externalMessagesSent: 0,\n  counts: {\n    input: state.inputCount,\n    accepted: state.accepted.length,\n    duplicateInBatch: state.rejected.filter(x => x.reason === \"duplicate_in_batch\").length,\n    invalid: state.rejected.filter(x => x.reason === \"invalid_email\").length,\n    mockSheetRows: state.mockSheetRows.length,\n    mockNotifications: state.mockNotifications.length,\n    mockAlerts: state.mockAlerts.length,\n  },\n  mockSheetRows: state.mockSheetRows,\n  mockNotifications: state.mockNotifications,\n  mockAlerts: state.mockAlerts,\n  rejected: state.rejected,\n}}];"
+      },
+      "id": "a6583a17-62da-45a4-9e8c-49d22975a5d1",
+      "name": "Summarize demo output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Create synthetic leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create synthetic leads": {
+      "main": [
+        [
+          {
+            "node": "Validate and deduplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate and deduplicate": {
+      "main": [
+        [
+          {
+            "node": "Classify accepted leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify accepted leads": {
+      "main": [
+        [
+          {
+            "node": "Prepare mock sheet rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare mock sheet rows": {
+      "main": [
+        [
+          {
+            "node": "Prepare mock notices and alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare mock notices and alerts": {
+      "main": [
+        [
+          {
+            "node": "Summarize demo output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "versionId": "46a9d237-4d45-4ce0-a70e-35fb932f037d",
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
